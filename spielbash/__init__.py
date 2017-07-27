@@ -27,7 +27,7 @@ import yaml
 
 # TODO should be settable
 READING_TIME = 2
-TYPING_SPEED = 0.1
+TYPING_SPEED = 0.08
 
 
 def pause(t):
@@ -77,7 +77,7 @@ class TmuxSendKeys(Command):
 
 
 class BaseAction:
-    def emulate_typing(self, line, session, discard=False):
+    def emulate_typing(self, line, session):
         for char in line:
             if char == ' ':
                 char = 'Space'
@@ -85,12 +85,6 @@ class BaseAction:
             # wait for execution
             tmux.output
             pause(TYPING_SPEED)
-        pause(READING_TIME)
-        if discard:
-            for char in line:
-                tmux = TmuxSendKeys(session, 'C-h')
-                tmux.output
-                pause(TYPING_SPEED)
 
     def send_enter(self, session):
         tmux = TmuxSendKeys(session, 'C-m')
@@ -115,7 +109,8 @@ class Dialogue(BaseAction):
         self.session = session
 
     def run(self):
-        self.emulate_typing(self.line, self.session, discard=True)
+        self.emulate_typing('# ' + self.line, self.session)
+        self.send_enter(self.session)
 
 
 class Scene(BaseAction):
@@ -147,7 +142,8 @@ class Scene(BaseAction):
         for var in self.movie.vars:
             if var in self.cmd:
                 self.cmd = self.cmd.replace(var, self.movie.vars[var])
-        self.emulate_typing(self.cmd, self.session, discard=False)
+        self.emulate_typing(self.cmd, self.session)
+        pause(READING_TIME)
         self.send_enter(self.session)
         if self.wait_for_execution:
             while is_process_running_in_tmux(self.session):
@@ -172,7 +168,7 @@ class Movie:
 
     def shoot(self):
         """shoot the movie."""
-        self.reel = Command('tmux new-session -d -s %s' % self.session_name)
+        self.reel = Command('tmux new-session -d -s %s -x 160 -y 40' % self.session_name)
         # start filming
         asciinema_cmd = 'asciinema rec -c "tmux attach -t %s" -y'
         if self.script.get('title'):
