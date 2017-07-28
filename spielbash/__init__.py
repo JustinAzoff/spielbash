@@ -17,6 +17,7 @@
 
 import argparse
 import json
+import pexpect
 import pipes
 import re
 import subprocess
@@ -174,11 +175,8 @@ class Movie:
         if self.script.get('title'):
             asciinema_cmd += ' -t %s' % pipes.quote(self.script.get('title'))
         asciinema_cmd += ' %s'
-        movie = subprocess.Popen(asciinema_cmd % (self.session_name,
-                                                  self.output_file),
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE,
-                                 shell=True)
+        full_asciinema_cmd = asciinema_cmd % (self.session_name, self.output_file)
+        movie = pexpect.spawn(full_asciinema_cmd, dimensions=(40, 160))
         # pause to make sure asciinema is ready
         pause(0.4)
         for scene in self.script['scenes']:
@@ -201,12 +199,12 @@ class Movie:
             if s:
                 s.run()
             print " Cut !"
-            pause(READING_TIME)
         TmuxSendKeys(self.session_name, 'exit')
         TmuxSendKeys(self.session_name, 'C-m')
         self.reel.communicate('exit')
-        out, err = movie.communicate()
-        return out, err
+        movie.sendeof()
+        out = movie.read_nonblocking(1024, timeout=4)
+        return out,''
 
 
 def main():
@@ -235,9 +233,9 @@ def main():
         with open(output_file, 'r') as m:
             j = json.load(m)
         if not j.get('width'):
-            j['width'] = 80
+            j['width'] = 160
         if not j.get('height'):
-            j['height'] = 25
+            j['height'] = 40
         with open(output_file, 'w') as m:
             json.dump(j, m)
         print "movie recorded as %s" % output_file
