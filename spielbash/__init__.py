@@ -144,7 +144,6 @@ class Scene(BaseAction):
             if var in self.cmd:
                 self.cmd = self.cmd.replace(var, self.movie.vars[var])
         self.emulate_typing(self.cmd, self.session)
-        pause(READING_TIME)
         self.send_enter(self.session)
         if self.wait_for_execution:
             while is_process_running_in_tmux(self.session):
@@ -183,6 +182,7 @@ class Movie:
         pause(0.4)
         for scene in self.script['scenes']:
             print "Rolling scene \"%s\"..." % scene['name'],
+            sys.stdout.flush()
             s = None
             if 'action' in scene:
                 s = Scene(scene['name'], scene.get('action', ''),
@@ -200,7 +200,7 @@ class Movie:
                 sys.exit(1)
             if s:
                 s.run()
-            discard = movie.read_nonblocking(102400, timeout=1)
+            discard = movie.read_nonblocking(102400, timeout=.1)
             print " Cut !"
         TmuxSendKeys(self.session_name, 'exit')
         TmuxSendKeys(self.session_name, 'C-m')
