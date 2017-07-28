@@ -234,13 +234,13 @@ def main():
     out, err = movie.shoot()
     if err:
         print err
+    else:
         # Pretty print json and remove extra crap at the end
         with open(output_file, 'r') as m:
             j = json.load(m)
         j = trim_movie(j)
         with open(output_file, 'w') as m:
             json.dump(j, m)
-    else:
         print "movie recorded as %s" % output_file
         print "to replay: asciinema play %s" % output_file
         print "to upload: asciinema upload %s" % output_file
