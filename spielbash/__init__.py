@@ -174,7 +174,7 @@ class Movie:
 
     def shoot(self):
         """shoot the movie."""
-        self.reel = Command('tmux new-session -d -s %s -x 120 -y 40' % self.session_name)
+        self.reel = Command('tmux new-session -d -s %s' % self.session_name)
         pause(0.5)
         Command('tmux set-option -t %s -g status off' % self.session_name).output
         # start filming
