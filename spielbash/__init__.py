@@ -203,7 +203,7 @@ def trim_movie(j):
     #This would be more efficient from the end, but whatever
     frames = j['stdout']
     last_exit = None
-    for idx, f in frames:
+    for idx, f in enumerate(frames):
         if f[1] == "exit":
             last_exit = idx
 
