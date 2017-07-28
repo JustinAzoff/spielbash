@@ -250,14 +250,6 @@ def main():
         print err
     else:
         # set default width and height
-        with open(output_file, 'r') as m:
-            j = json.load(m)
-        if not j.get('width'):
-            j['width'] = 120
-        if not j.get('height'):
-            j['height'] = 40
-        with open(output_file, 'w') as m:
-            json.dump(j, m)
         print "movie recorded as %s" % output_file
         print "to replay: asciinema play %s" % output_file
         print "to upload: asciinema upload %s" % output_file
