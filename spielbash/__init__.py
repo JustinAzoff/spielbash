@@ -102,12 +102,13 @@ class TmuxWrapper:
         self.emulate_typing(line, speed=0)
         self.send_enter()
 
-    def dialog(self, line):
+    def dialog(self, line, hesitate=0):
         self.emulate_typing('# ' + line)
+        self.pause(hesitate)
         self.send_enter()
 
 
-    def action(self, action, wait=False, keep=None, vars={}):
+    def action(self, action, hesitate=0, wait=False, keep=None, vars={}):
         original_buffer = self._get_buffer().strip('\n')
         to_keep = {}
         if keep:
@@ -121,6 +122,7 @@ class TmuxWrapper:
                 cmd = cmd.replace(var, value)
 
         self.emulate_typing(cmd)
+        self.pause(hesitate)
         self.send_enter()
         if wait:
             while is_process_running_in_tmux(self.session):
@@ -147,6 +149,18 @@ class Movie:
 
         self.terminal = TmuxWrapper(name)
 
+    def process_scene(self, scene):
+        if 'action' in scene:
+            self.terminal.action(vars=self.vars, **scene)
+        elif 'line' in scene:
+            self.terminal.dialog(**scene)
+        elif 'press_key' in scene:
+            self.terminal.press_key(**scene)
+        elif 'pause' in scene:
+            self.terminal.pause(**scene)
+        else:
+            sys.exit(1)
+
     def shoot(self):
         """shoot the movie."""
         self.reel = popen(['tmux', 'new-session', '-d', '-s', self.session_name])
@@ -170,17 +184,7 @@ class Movie:
             name = scene.pop('name')
             sys.stdout.write('Rolling scene "%s"...' % name)
             sys.stdout.flush()
-            s = None
-            if 'action' in scene:
-                self.terminal.action(vars=self.vars, **scene)
-            elif 'line' in scene:
-                self.terminal.dialog(**scene)
-            elif 'press_key' in scene:
-                self.terminal.press_key(**scene)
-            elif 'pause' in scene:
-                self.terminal.pause(**scene)
-            else:
-                sys.exit(1)
+            self.process_scene(scene)
             print " Cut !"
         self.terminal.send_keys('exit')
         self.terminal.send_keys('C-m')
