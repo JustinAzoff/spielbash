@@ -19,6 +19,8 @@ import argparse
 import json
 import pexpect
 import pipes
+import os
+import random
 import re
 import subprocess
 import sys
@@ -85,7 +87,8 @@ class TmuxWrapper:
             if char == ' ':
                 char = 'Space'
             self.send_keys(char)
-            pause(speed)
+            if speed:
+                pause(random.randrange(0,50)/400.0)
 
     def send_enter(self):
         self.send_keys('C-m')
@@ -171,7 +174,7 @@ class Movie:
         if self.script.get('title'):
             asciinema_cmd += ' -t %s' % pipes.quote(self.script.get('title'))
         asciinema_cmd += ' %s'
-        full_asciinema_cmd = asciinema_cmd % (self.session_name, self.output_file)
+        full_asciinema_cmd = asciinema_cmd % (self.session_name, os.path.abspath(self.output_file))
         if 'before' in self.script:
             self.terminal.type(self.script['before'])
             
