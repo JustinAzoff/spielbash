@@ -84,14 +84,14 @@ class TmuxSendKeys(Command):
 
 
 class BaseAction:
-    def emulate_typing(self, line, session):
+    def emulate_typing(self, line, session, speed=TYPING_SPEED):
         for char in line:
             if char == ' ':
                 char = 'Space'
             tmux = TmuxSendKeys(session, char)
             # wait for execution
             tmux.output
-            pause(TYPING_SPEED)
+            pause(speed)
 
     def send_enter(self, session):
         tmux = TmuxSendKeys(session, 'C-m')
@@ -109,6 +109,14 @@ class PressKey:
         tmux = TmuxSendKeys(self.session, self.key)
         tmux.output
 
+class Blast(BaseAction):
+    def __init__(self, line, session):
+        self.line = line
+        self.session = session
+
+    def run(self):
+        self.emulate_typing(self.line, self.session, speed=0)
+        self.send_enter(self.session)
 
 class Dialogue(BaseAction):
     def __init__(self, line, session):
@@ -183,6 +191,10 @@ class Movie:
             asciinema_cmd += ' -t %s' % pipes.quote(self.script.get('title'))
         asciinema_cmd += ' %s'
         full_asciinema_cmd = asciinema_cmd % (self.session_name, self.output_file)
+        if 'before' in self.script:
+            s = Blast(self.script['before'], self.session_name)
+            s.run()
+            
         print "Run to record:"
         print full_asciinema_cmd
         while not is_tmux_session_attached(self.session_name):
