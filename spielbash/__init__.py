@@ -59,118 +59,83 @@ def is_tmux_session_attached(session):
     return bool(out.strip())
 
 
-class Command(object):
-    def __init__(self, cmd):
-        if not isinstance(cmd, list):
-            self.cmd = cmd.split(' ')
-        else:
-            self.cmd = cmd
-        self.process = subprocess.Popen(self.cmd, stdout=subprocess.PIPE,
-                                        stderr=subprocess.PIPE)
+def popen(cmd):
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    @property
-    def output(self):
-        self.process.wait()
-        return (self.process.stdout, self.process.stderr)
-
-    def communicate(self, input):
-        return self.process.communicate(input)
-
-
-class TmuxSendKeys(Command):
-    def __init__(self, tmux_session, keys):
-        cmd = "tmux send-keys -t %s %s" % (tmux_session, keys)
-        super(TmuxSendKeys, self).__init__(cmd)
-
-
-class BaseAction:
-    def emulate_typing(self, line, session, speed=TYPING_SPEED):
-        for char in line:
-            if char == ' ':
-                char = 'Space'
-            tmux = TmuxSendKeys(session, char)
-            # wait for execution
-            tmux.output
-            pause(speed)
-
-    def send_enter(self, session):
-        tmux = TmuxSendKeys(session, 'C-m')
-        # wait for execution
-        tmux.output
-
-
-class PressKey:
-    def __init__(self, key, session):
-        self.key = {'ENTER': 'C-m',
-                    'BACKSPACE': 'C-h'}.get(key.upper(), 'C-m')
+class TmuxWrapper:
+    def __init__(self, session):
         self.session = session
-
-    def run(self):
-        tmux = TmuxSendKeys(self.session, self.key)
-        tmux.output
-
-class Blast(BaseAction):
-    def __init__(self, line, session):
-        self.line = line
-        self.session = session
-
-    def run(self):
-        self.emulate_typing(self.line, self.session, speed=0)
-        self.send_enter(self.session)
-
-class Dialogue(BaseAction):
-    def __init__(self, line, session):
-        self.line = line
-        self.session = session
-
-    def run(self):
-        self.emulate_typing('# ' + self.line, self.session)
-        self.send_enter(self.session)
-
-
-class Scene(BaseAction):
-    def __init__(self, name, cmd, session, keep, movie,
-                 wait_for_execution, *args, **kwargs):
-        self.name = name
-        self.cmd = cmd
-        self.session = session
-        self.original_buffer = self._get_buffer().strip('\n')
-        self.output = None
-        self.movie = movie
-        self.wait_for_execution = wait_for_execution
-        self.to_keep = dict((u['var'],
-                             re.compile(u['regex'], re.M)) for u in keep)
 
     def _get_buffer(self):
         capture_cmd = ['tmux', 'capture-pane', '-S', '-', '-t', self.session]
-        capture = subprocess.Popen(capture_cmd,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
-        capture.wait()
-        buffer = subprocess.Popen(['tmux', 'show-buffer'],
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE).communicate()[0]
-        return buffer
+        subprocess.check_call(capture_cmd)
+        buf = subprocess.check_output(['tmux', 'show-buffer'])
+        return buf
 
-    def run(self):
+    def status_off(self):
+        cmd = ['tmux', 'set-option', '-t', self.session, '-g', 'status', 'off']
+        subprocess.check_call(cmd)
+
+    def send_keys(self, keys):
+        cmd = ["tmux", "send-keys", "-t", self.session, keys]
+        subprocess.check_call(cmd)
+
+    def emulate_typing(self, line, speed=TYPING_SPEED):
+        for char in line:
+            if char == ' ':
+                char = 'Space'
+            self.send_keys(char)
+            pause(speed)
+
+    def send_enter(self):
+        self.send_keys('C-m')
+
+    def press_key(self, key):
+        key_mapping = {
+            'ENTER': 'C-m',
+            'BACKSPACE': 'C-h'
+        }
+        key = key_mapping.get(key.upper(), 'C-m')
+        self.send_keys(key)
+
+    def type(self, line):
+        self.emulate_typing(line, speed=0)
+        self.send_enter()
+
+    def dialog(self, line):
+        self.emulate_typing('# ' + line)
+        self.send_enter()
+
+
+    def action(self, action, wait=False, keep=None, vars={}):
+        original_buffer = self._get_buffer().strip('\n')
+        to_keep = {}
+        if keep:
+            to_keep = dict((u['var'],
+                             re.compile(u['regex'], re.M)) for u in keep)
+
+        cmd = action
         # replace vars if needed
-        for var in self.movie.vars:
+        for var, value in vars.items():
             if var in self.cmd:
-                self.cmd = self.cmd.replace(var, self.movie.vars[var])
-        self.emulate_typing(self.cmd, self.session)
-        self.send_enter(self.session)
-        if self.wait_for_execution:
+                cmd = cmd.replace(var, value)
+
+        self.emulate_typing(cmd)
+        self.send_enter()
+        if wait:
             while is_process_running_in_tmux(self.session):
                 pause(0.1)
         # output will be after the sent command. Remove old buffer first:
-        b = self._get_buffer()[len(self.original_buffer):]
-        self.output = b.split(self.cmd)[-1].strip('\n')
-        for var, regex in self.to_keep.items():
-            match = regex.findall(self.output)
+        b = self._get_buffer()[len(original_buffer):]
+        output = b.split(cmd)[-1].strip('\n')
+        for var, regex in to_keep.items():
+            match = regex.findall(output)
             if match:
                 # TODO support multiple outputs
-                self.movie.vars[var] = match[0]
+                vars[var] = match[0]
 
+    def pause(self, pause=1):
+        time.sleep(float(pause))
 
 class Movie:
     def __init__(self, name, script, output_file):
@@ -180,11 +145,13 @@ class Movie:
         self.reel = None
         self.vars = {}
 
+        self.terminal = TmuxWrapper(name)
+
     def shoot(self):
         """shoot the movie."""
-        self.reel = Command('tmux new-session -d -s %s' % self.session_name)
+        self.reel = popen(['tmux', 'new-session', '-d', '-s', self.session_name])
         pause(0.5)
-        Command('tmux set-option -t %s -g status off' % self.session_name).output
+        self.terminal.status_off()
         # start filming
         asciinema_cmd = 'asciinema rec -c "tmux attach -t %s" -y'
         if self.script.get('title'):
@@ -192,8 +159,7 @@ class Movie:
         asciinema_cmd += ' %s'
         full_asciinema_cmd = asciinema_cmd % (self.session_name, self.output_file)
         if 'before' in self.script:
-            s = Blast(self.script['before'], self.session_name)
-            s.run()
+            self.terminal.type(self.script['before'])
             
         print "Run to record:"
         print full_asciinema_cmd
@@ -201,31 +167,47 @@ class Movie:
             print "Waiting for you to attach to the tmux session"
             pause(2)
         for scene in self.script['scenes']:
-            print "Rolling scene \"%s\"..." % scene['name'],
+            name = scene.pop('name')
+            sys.stdout.write('Rolling scene "%s"...' % name)
             sys.stdout.flush()
             s = None
             if 'action' in scene:
-                s = Scene(scene['name'], scene.get('action', ''),
-                          self.session_name,
-                          scene.get('keep', {}), self,
-                          wait_for_execution=scene.get('wait', False))
+                self.terminal.action(vars=self.vars, **scene)
             elif 'line' in scene:
-                s = Dialogue(scene['line'], self.session_name)
+                self.terminal.dialog(**scene)
             elif 'press_key' in scene:
-                s = PressKey(scene['press_key'], self.session_name)
+                self.terminal.press_key(**scene)
             elif 'pause' in scene:
-                pause(scene.get('pause', 1))
-                s = None
+                self.terminal.pause(**scene)
             else:
                 sys.exit(1)
-            if s:
-                s.run()
             print " Cut !"
-        TmuxSendKeys(self.session_name, 'exit')
-        TmuxSendKeys(self.session_name, 'C-m')
+        self.terminal.send_keys('exit')
+        self.terminal.send_keys('C-m')
         self.reel.communicate('exit')
         return '', ''
 
+
+def trim_movie(j):
+    """Remove the 'exit' and everything after it in the movie"""
+
+    #Find the last frame that looks like
+    #[
+    #  5.016473,
+    #  "exit"
+    #],
+    #This would be more efficient from the end, but whatever
+    frames = j['stdout']
+    last_exit = None
+    for idx, f in frames:
+        if f[1] == "exit":
+            last_exit = idx
+
+    if last_exit is None:
+        return j
+
+    j['stdout'] = frames[:last_exit]
+    return j
 
 def main():
     parser = argparse.ArgumentParser(description="spielbash CLI")
@@ -248,8 +230,13 @@ def main():
     out, err = movie.shoot()
     if err:
         print err
+        # Pretty print json and remove extra crap at the end
+        with open(output_file, 'r') as m:
+            j = json.load(m)
+        j = trim_movie(j)
+        with open(output_file, 'w') as m:
+            json.dump(j, m)
     else:
-        # set default width and height
         print "movie recorded as %s" % output_file
         print "to replay: asciinema play %s" % output_file
         print "to upload: asciinema upload %s" % output_file
