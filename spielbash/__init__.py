@@ -52,6 +52,12 @@ def is_process_running_in_tmux(session):
         return child[0].strip('\n')
     return False
 
+def is_tmux_session_attached(session):
+    """Find out whether or not a tmux session is attached"""
+    cmd = ['tmux', 'list-clients', '-t', session]
+    out = subprocess.check_output(cmd)
+    return bool(out.strip())
+
 
 class Command(object):
     def __init__(self, cmd):
@@ -168,7 +174,7 @@ class Movie:
 
     def shoot(self):
         """shoot the movie."""
-        self.reel = Command('tmux new-session -d -s %s -x 160 -y 40' % self.session_name)
+        self.reel = Command('tmux new-session -d -s %s -x 120 -y 40' % self.session_name)
         pause(0.5)
         Command('tmux set-option -t %s -g status off' % self.session_name).output
         # start filming
@@ -177,9 +183,11 @@ class Movie:
             asciinema_cmd += ' -t %s' % pipes.quote(self.script.get('title'))
         asciinema_cmd += ' %s'
         full_asciinema_cmd = asciinema_cmd % (self.session_name, self.output_file)
-        movie = pexpect.spawn(full_asciinema_cmd, dimensions=(40, 160))
-        # pause to make sure asciinema is ready
-        pause(0.4)
+        print "Run to record:"
+        print full_asciinema_cmd
+        while not is_tmux_session_attached(self.session_name):
+            print "Waiting for you to attach to the tmux session"
+            pause(2)
         for scene in self.script['scenes']:
             print "Rolling scene \"%s\"..." % scene['name'],
             sys.stdout.flush()
@@ -200,13 +208,11 @@ class Movie:
                 sys.exit(1)
             if s:
                 s.run()
-            discard = movie.read_nonblocking(102400, timeout=.1)
             print " Cut !"
         TmuxSendKeys(self.session_name, 'exit')
         TmuxSendKeys(self.session_name, 'C-m')
         self.reel.communicate('exit')
-        out = movie.read_nonblocking(1024, timeout=4)
-        return out, ''
+        return '', ''
 
 
 def main():
@@ -235,7 +241,7 @@ def main():
         with open(output_file, 'r') as m:
             j = json.load(m)
         if not j.get('width'):
-            j['width'] = 160
+            j['width'] = 120
         if not j.get('height'):
             j['height'] = 40
         with open(output_file, 'w') as m:
