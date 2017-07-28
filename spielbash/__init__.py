@@ -170,6 +170,8 @@ class Movie:
     def shoot(self):
         """shoot the movie."""
         self.reel = Command('tmux new-session -d -s %s -x 160 -y 40' % self.session_name)
+        pause(0.5)
+        Command('tmux set-option -t %s -g status off' % self.session_name).output
         # start filming
         asciinema_cmd = 'asciinema rec -c "tmux attach -t %s" -y'
         if self.script.get('title'):
@@ -198,13 +200,13 @@ class Movie:
                 sys.exit(1)
             if s:
                 s.run()
+            discard = movie.read_nonblocking(102400, timeout=1)
             print " Cut !"
         TmuxSendKeys(self.session_name, 'exit')
         TmuxSendKeys(self.session_name, 'C-m')
         self.reel.communicate('exit')
-        movie.sendeof()
         out = movie.read_nonblocking(1024, timeout=4)
-        return out,''
+        return out, ''
 
 
 def main():
