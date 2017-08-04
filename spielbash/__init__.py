@@ -239,6 +239,8 @@ def main():
         print err
     else:
         # Pretty print json and remove extra crap at the end
+        print ("Giving asciinema 2 seconds to exit..")
+        pause(2)
         with open(output_file, 'r') as m:
             j = json.load(m)
         j = trim_movie(j)
