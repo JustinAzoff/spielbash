@@ -111,7 +111,7 @@ class TmuxWrapper:
         self.send_enter()
 
 
-    def action(self, action, hesitate=0, wait=False, keep=None, vars={}):
+    def action(self, action, hesitate=0, wait=True, keep=None, vars={}):
         original_buffer = self._get_buffer().strip('\n')
         to_keep = {}
         if keep:
